@@ -579,8 +579,8 @@ void Epos::read() {
   int velocity_raw;
   short current_raw;
   VCS_GetPositionIs(node_handle_->device_handle->ptr, node_handle_->node_id, &position_raw, &error_code);
-  VCS_GetVelocityIs(node_handle_->device_handle->ptr, node_handle_->node_id, &velocity_raw, &error_code);
-  VCS_GetCurrentIs(node_handle_->device_handle->ptr, node_handle_->node_id, &current_raw, &error_code);
+  VCS_GetVelocityIsAveraged(node_handle_->device_handle->ptr, node_handle_->node_id, &velocity_raw, &error_code);
+  VCS_GetCurrentIsAveraged(node_handle_->device_handle->ptr, node_handle_->node_id, &current_raw, &error_code);
   position_ = position_raw;
   velocity_ = velocity_raw;
   current_ = current_raw  / 1000.0; // mA -> A
