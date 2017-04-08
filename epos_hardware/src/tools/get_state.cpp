@@ -5,28 +5,28 @@
 
 int main(int argc, char** argv){
   uint64_t serial_number;
-  if(argc == 2){
-    if(!SerialNumberFromHex(argv[1], &serial_number)) {
+  if(argc == 3){
+    if(!SerialNumberFromHex(argv[2], &serial_number)) {
       std::cerr << "Expected a serial number" << std::endl;
       return 1;
     }
   }
   else {
-    std::cerr << "Expected exactly one argument that is a serial number" << std::endl;
-    return 1;
+      std::cerr << "Expected exactly two argument, first controller type (EPOS2,EPOS4), then serial number" << std::endl;
+      return 1;
   }
 
   std::string error_string;
   unsigned int error_code = 0;
 
-  std::cout << "Searching for USB EPOS2: 0x" << std::hex << serial_number << std::endl;
+  std::cout << "Searching for USB " << argv[1] << ": 0x" << std::hex << serial_number << std::endl;
 
   std::string port_name;
 
   EposFactory epos_factory;
 
   NodeHandlePtr handle;
-  if(handle = epos_factory.CreateNodeHandle("EPOS2", "MAXON SERIAL V2", "USB", serial_number, &error_code)) {
+  if(handle = epos_factory.CreateNodeHandle(argv[1], "MAXON SERIAL V2", "USB", serial_number, &error_code)) {
     int position;
     if(VCS_GetPositionIs(handle->device_handle->ptr, handle->node_id, &position, &error_code)){
       std::cout << "Position: " << std::dec << position << std::endl;

@@ -135,18 +135,19 @@ DeviceHandlePtr EposFactory::CreateDeviceHandle(const std::string device_name,
 						const std::string interface_name,
 						const std::string port_name,
 						unsigned int* error_code) {
-  const std::string key = device_name + '/' + protocol_stack_name + '/' + interface_name + '/' + port_name;
-  DeviceHandlePtr handle;
-  if(!(handle = existing_handles[key].lock())) { // Handle exists
-    void* raw_handle = VCS_OpenDevice((char*)device_name.c_str(), (char*)protocol_stack_name.c_str(), (char*)interface_name.c_str(), (char*)port_name.c_str(), error_code);
-    if(!raw_handle) // failed to open device
-      return DeviceHandlePtr();
+      const std::string key = device_name + '/' + protocol_stack_name + '/' + interface_name + '/' + port_name;
+      DeviceHandlePtr handle;
+      if(!(handle = existing_handles[key].lock())) { // Handle exists
+            void* raw_handle = VCS_OpenDevice((char*)device_name.c_str(), (char*)protocol_stack_name.c_str(), (char*)interface_name.c_str(), (char*)port_name.c_str(), error_code);
+            if(!raw_handle) { // failed to open device
+                  std::cout << device_name << "\n" << protocol_stack_name << "\n" << interface_name << "\n" << port_name << "\n";
+                  return DeviceHandlePtr();
+            }
 
-    handle = DeviceHandlePtr(new DeviceHandle(raw_handle));
-    existing_handles[key] = handle;
-  }
-
-  return handle;
+            handle = DeviceHandlePtr(new DeviceHandle(raw_handle));
+            existing_handles[key] = handle;
+      }
+      return handle;
 }
 
 NodeHandlePtr EposFactory::CreateNodeHandle(const std::string device_name,
@@ -178,7 +179,7 @@ int EposFactory::EnumerateNodes(const std::string device_name, const std::string
 				const std::string port_name, std::vector<EnumeratedNode>* nodes, unsigned int* error_code) {
   DeviceHandlePtr handle;
   if(!(handle = CreateDeviceHandle(device_name, protocol_stack_name, interface_name, port_name, error_code))){
-    return 0;
+      return 0;
   }
   for(unsigned short i = 1; i < 127; ++i) {
     EnumeratedNode node;

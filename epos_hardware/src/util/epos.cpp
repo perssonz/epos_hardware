@@ -30,7 +30,11 @@ Epos::Epos(const std::string& name,
     ROS_ASSERT(SerialNumberFromHex(serial_number_str, &serial_number_));
   }
 
-
+  if(!config_nh_.getParam("controller_version", controller_version_)) {
+    ROS_ERROR("You must specify a serial number");
+    valid_ = false;
+  }
+        
   std::string operation_mode_str;
   if(!config_nh_.getParam("operation_mode", operation_mode_str)) {
     ROS_ERROR("You must specify an operation mode");
@@ -154,7 +158,7 @@ bool Epos::init() {
 
   ROS_INFO_STREAM("Initializing: 0x" << std::hex << serial_number_);
   unsigned int error_code;
-  node_handle_ = epos_factory_->CreateNodeHandle("EPOS2", "MAXON SERIAL V2", "USB", serial_number_, &error_code);
+  node_handle_ = epos_factory_->CreateNodeHandle(controller_version_.c_str(), "MAXON SERIAL V2", "USB", serial_number_, &error_code);
   if(!node_handle_) {
     ROS_ERROR("Could not find motor");
     return false;
@@ -204,221 +208,233 @@ bool Epos::init() {
     torque_constant_ = 1.0;
   }
 
-  ROS_INFO("Configuring Motor");
+  
+  bool configure;
+  if (config_nh_.getParam("configure", configure) && configure) 
   {
-    nominal_current_ = 0;
-    max_current_ = 0;
-    ros::NodeHandle motor_nh(config_nh_, "motor");
+      ROS_INFO("Configuring Motor");
+      {
+      nominal_current_ = 0;
+      max_current_ = 0;
+      ros::NodeHandle motor_nh(config_nh_, "motor");
 
-    VCS_FROM_SINGLE_PARAM_REQUIRED(motor_nh, int, type, SetMotorType);
+      VCS_FROM_SINGLE_PARAM_REQUIRED(motor_nh, int, type, SetMotorType);
 
-    {
-      bool dc_motor;
-      double nominal_current;
-      double max_output_current;
-      double thermal_time_constant;
-      if(!ParameterSetLoader(motor_nh, "dc_motor")
-	 .param("nominal_current", nominal_current)
-	 .param("max_output_current", max_output_current)
-	 .param("thermal_time_constant", thermal_time_constant)
-	 .all_or_none(dc_motor))
-	return false;
-      if(dc_motor){
-	nominal_current_ = nominal_current;
-	max_current_ = max_output_current;
-	VCS(SetDcMotorParameter,
-	    (int)(1000 * nominal_current), // A -> mA
-	    (int)(1000 * max_output_current), // A -> mA
-	    (int)(10 * thermal_time_constant) // s -> 100ms
-	    );
+      {
+            bool dc_motor;
+            double nominal_current;
+            double max_output_current;
+            double thermal_time_constant;
+            if(!ParameterSetLoader(motor_nh, "dc_motor")
+            .param("nominal_current", nominal_current)
+            .param("max_output_current", max_output_current)
+            .param("thermal_time_constant", thermal_time_constant)
+            .all_or_none(dc_motor))
+            return false;
+            if(dc_motor){
+            nominal_current_ = nominal_current;
+            max_current_ = max_output_current;
+            VCS(SetDcMotorParameter,
+                  (int)(1000 * nominal_current), // A -> mA
+                  (int)(1000 * max_output_current), // A -> mA
+                  (int)(10 * thermal_time_constant) // s -> 100ms
+                  );
+            }
       }
-    }
 
 
-    {
-      bool ec_motor;
-      double nominal_current;
-      double max_output_current;
-      double thermal_time_constant;
-      int number_of_pole_pairs;
-      if(!ParameterSetLoader(motor_nh, "ec_motor")
-	 .param("nominal_current", nominal_current)
-	 .param("max_output_current", max_output_current)
-	 .param("thermal_time_constant", thermal_time_constant)
-	 .param("number_of_pole_pairs", number_of_pole_pairs)
-	 .all_or_none(ec_motor))
-	return false;
+      {
+            bool ec_motor;
+            double nominal_current;
+            double max_output_current;
+            double thermal_time_constant;
+            int number_of_pole_pairs;
+            if(!ParameterSetLoader(motor_nh, "ec_motor")
+            .param("nominal_current", nominal_current)
+            .param("max_output_current", max_output_current)
+            .param("thermal_time_constant", thermal_time_constant)
+            .param("number_of_pole_pairs", number_of_pole_pairs)
+            .all_or_none(ec_motor))
+            return false;
 
-      if(ec_motor) {
-	nominal_current_ = nominal_current;
-	max_current_ = max_output_current;
-	VCS(SetEcMotorParameter,
-	    (int)(1000 * nominal_current), // A -> mA
-	    (int)(1000 * max_output_current), // A -> mA
-	    (int)(10 * thermal_time_constant), // s -> 100ms
-	    number_of_pole_pairs);
+            if(ec_motor) {
+            nominal_current_ = nominal_current;
+            max_current_ = max_output_current;
+            VCS(SetEcMotorParameter,
+                  (int)(1000 * nominal_current), // A -> mA
+                  (int)(1000 * max_output_current), // A -> mA
+                  (int)(10 * thermal_time_constant), // s -> 100ms
+                  number_of_pole_pairs);
+            }
       }
-    }
 
-    double max_speed;
-    if(motor_nh.getParam("max_speed", max_speed)) {
-      uint32_t data = max_speed;
-      VCS_SET_OBJECT(0x6410, 0x04, &data, 2);
-    }
-  }
-
-  ROS_INFO("Configuring Sensor");
-  {
-    ros::NodeHandle sensor_nh(config_nh_, "sensor");
-
-    VCS_FROM_SINGLE_PARAM_REQUIRED(sensor_nh, int, type, SetSensorType);
-
-    {
-      bool incremental_encoder;
-      int resolution;
-      bool inverted_polarity;
-
-      if(!ParameterSetLoader(sensor_nh, "incremental_encoder")
-	 .param("resolution", resolution)
-	 .param("inverted_polarity", inverted_polarity)
-	 .all_or_none(incremental_encoder))
-	return false;
-      if(incremental_encoder) {
-	VCS(SetIncEncoderParameter, resolution, inverted_polarity);
+      double max_speed;
+      if(motor_nh.getParam("max_speed", max_speed)) {
+            uint32_t data = max_speed;
+            VCS_SET_OBJECT(0x6410, 0x04, &data, 2);
       }
-    }
-
-    {
-      bool hall_sensor;
-      bool inverted_polarity;
-
-      if(!ParameterSetLoader(sensor_nh, "hall_sensor")
-	 .param("inverted_polarity", inverted_polarity)
-	 .all_or_none(hall_sensor))
-	return false;
-      if(hall_sensor) {
-	VCS(SetHallSensorParameter, inverted_polarity);
       }
-    }
 
-    {
-      bool ssi_absolute_encoder;
-      int data_rate;
-      int number_of_multiturn_bits;
-      int number_of_singleturn_bits;
-      bool inverted_polarity;
+      ROS_INFO("Configuring Sensor");
+      {
+      ros::NodeHandle sensor_nh(config_nh_, "sensor");
 
-      if(!ParameterSetLoader(sensor_nh, "ssi_absolute_encoder")
-	 .param("data_rate", data_rate)
-	 .param("number_of_multiturn_bits", number_of_multiturn_bits)
-	 .param("number_of_singleturn_bits", number_of_singleturn_bits)
-	 .param("inverted_polarity", inverted_polarity)
-	 .all_or_none(ssi_absolute_encoder))
-	return false;
-      if(ssi_absolute_encoder) {
-	VCS(SetSsiAbsEncoderParameter,
-	    data_rate,
-	    number_of_multiturn_bits,
-	    number_of_singleturn_bits,
-	    inverted_polarity);
+      VCS_FROM_SINGLE_PARAM_REQUIRED(sensor_nh, int, type, SetSensorType);
+
+      {
+            bool incremental_encoder;
+            int resolution;
+            bool inverted_polarity;
+
+            if(!ParameterSetLoader(sensor_nh, "incremental_encoder")
+            .param("resolution", resolution)
+            .param("inverted_polarity", inverted_polarity)
+            .all_or_none(incremental_encoder))
+            return false;
+            if(incremental_encoder) {
+            VCS(SetIncEncoderParameter, resolution, inverted_polarity);
+            }
       }
-    }
 
-  }
+      {
+            bool hall_sensor;
+            bool inverted_polarity;
 
-  {
-    ROS_INFO("Configuring Safety");
-    ros::NodeHandle safety_nh(config_nh_, "safety");
-
-    VCS_FROM_SINGLE_PARAM_OPTIONAL(safety_nh, int, max_following_error, SetMaxFollowingError);
-    VCS_FROM_SINGLE_PARAM_OPTIONAL(safety_nh, int, max_profile_velocity, SetMaxProfileVelocity);
-    VCS_FROM_SINGLE_PARAM_OPTIONAL(safety_nh, int, max_acceleration, SetMaxAcceleration);
-    if(max_profile_velocity_set)
-      max_profile_velocity_ = max_profile_velocity;
-    else
-      max_profile_velocity_ = -1;
-  }
-
-  {
-    ROS_INFO("Configuring Position Regulator");
-    ros::NodeHandle position_regulator_nh(config_nh_, "position_regulator");
-    {
-      bool position_regulator_gain;
-      int p, i, d;
-      if(!ParameterSetLoader(position_regulator_nh, "gain")
-	 .param("p", p)
-	 .param("i", i)
-	 .param("d", d)
-	 .all_or_none(position_regulator_gain))
-	return false;
-      if(position_regulator_gain){
-	VCS(SetPositionRegulatorGain, p, i, d);
+            if(!ParameterSetLoader(sensor_nh, "hall_sensor")
+            .param("inverted_polarity", inverted_polarity)
+            .all_or_none(hall_sensor))
+            return false;
+            if(hall_sensor) {
+            VCS(SetHallSensorParameter, inverted_polarity);
+            }
       }
-    }
 
-    {
-      bool position_regulator_feed_forward;
-      int velocity, acceleration;
-      if(!ParameterSetLoader(position_regulator_nh, "feed_forward")
-	 .param("velocity", velocity)
-	 .param("acceleration", acceleration)
-	 .all_or_none(position_regulator_feed_forward))
-	return false;
-      if(position_regulator_feed_forward){
-	VCS(SetPositionRegulatorFeedForward, velocity, acceleration);
+      {
+            bool ssi_absolute_encoder;
+            int data_rate;
+            int number_of_multiturn_bits;
+            int number_of_singleturn_bits;
+            bool inverted_polarity;
+
+            if(!ParameterSetLoader(sensor_nh, "ssi_absolute_encoder")
+            .param("data_rate", data_rate)
+            .param("number_of_multiturn_bits", number_of_multiturn_bits)
+            .param("number_of_singleturn_bits", number_of_singleturn_bits)
+            .param("inverted_polarity", inverted_polarity)
+            .all_or_none(ssi_absolute_encoder))
+            return false;
+            if(ssi_absolute_encoder) {
+            VCS(SetSsiAbsEncoderParameter,
+                  data_rate,
+                  number_of_multiturn_bits,
+                  number_of_singleturn_bits,
+                  inverted_polarity);
+            }
       }
-    }
-  }
 
-  {
-    ROS_INFO("Configuring Velocity Regulator");
-    ros::NodeHandle velocity_regulator_nh(config_nh_, "velocity_regulator");
-    {
-      bool velocity_regulator_gain;
-      int p, i;
-      if(!ParameterSetLoader(velocity_regulator_nh, "gain")
-	 .param("p", p)
-	 .param("i", i)
-	 .all_or_none(velocity_regulator_gain))
-	return false;
-      if(velocity_regulator_gain){
-	VCS(SetVelocityRegulatorGain, p, i);
       }
-    }
 
-    {
-      bool velocity_regulator_feed_forward;
-      int velocity, acceleration;
-      if(!ParameterSetLoader(velocity_regulator_nh, "feed_forward")
-	 .param("velocity", velocity)
-	 .param("acceleration", acceleration)
-	 .all_or_none(velocity_regulator_feed_forward))
-	return false;
-      if(velocity_regulator_feed_forward){
-	VCS(SetVelocityRegulatorFeedForward, velocity, acceleration);
+      {
+      ROS_INFO("Configuring Position Regulator");
+      ros::NodeHandle position_regulator_nh(config_nh_, "position_regulator");
+      {
+            bool position_regulator_gain;
+            int p, i, d;
+            if(!ParameterSetLoader(position_regulator_nh, "gain")
+            .param("p", p)
+            .param("i", i)
+            .param("d", d)
+            .all_or_none(position_regulator_gain))
+            return false;
+            if(position_regulator_gain){
+            VCS(SetPositionRegulatorGain, p, i, d);
+            }
       }
-    }
-  }
 
-
-  {
-    ROS_INFO("Configuring Current Regulator");
-    ros::NodeHandle current_regulator_nh(config_nh_, "current_regulator");
-    {
-      bool current_regulator_gain;
-      int p, i;
-      if(!ParameterSetLoader(current_regulator_nh, "gain")
-	 .param("p", p)
-	 .param("i", i)
-	 .all_or_none(current_regulator_gain))
-	return false;
-      if(current_regulator_gain){
-	VCS(SetCurrentRegulatorGain, p, i);
+      {
+            bool position_regulator_feed_forward;
+            int velocity, acceleration;
+            if(!ParameterSetLoader(position_regulator_nh, "feed_forward")
+            .param("velocity", velocity)
+            .param("acceleration", acceleration)
+            .all_or_none(position_regulator_feed_forward))
+            return false;
+            if(position_regulator_feed_forward){
+            VCS(SetPositionRegulatorFeedForward, velocity, acceleration);
+            }
       }
-    }
-  }
+      }
+
+      {
+      ROS_INFO("Configuring Velocity Regulator");
+      ros::NodeHandle velocity_regulator_nh(config_nh_, "velocity_regulator");
+      {
+            bool velocity_regulator_gain;
+            int p, i;
+            if(!ParameterSetLoader(velocity_regulator_nh, "gain")
+            .param("p", p)
+            .param("i", i)
+            .all_or_none(velocity_regulator_gain))
+            return false;
+            if(velocity_regulator_gain){
+            VCS(SetVelocityRegulatorGain, p, i);
+            }
+      }
+
+      {
+            bool velocity_regulator_feed_forward;
+            int velocity, acceleration;
+            if(!ParameterSetLoader(velocity_regulator_nh, "feed_forward")
+            .param("velocity", velocity)
+            .param("acceleration", acceleration)
+            .all_or_none(velocity_regulator_feed_forward))
+            return false;
+            if(velocity_regulator_feed_forward){
+            VCS(SetVelocityRegulatorFeedForward, velocity, acceleration);
+            }
+      }
+      }
 
 
+      {
+      ROS_INFO("Configuring Current Regulator");
+      ros::NodeHandle current_regulator_nh(config_nh_, "current_regulator");
+      {
+            bool current_regulator_gain;
+            int p, i;
+            if(!ParameterSetLoader(current_regulator_nh, "gain")
+            .param("p", p)
+            .param("i", i)
+            .all_or_none(current_regulator_gain))
+            return false;
+            if(current_regulator_gain){
+            VCS(SetCurrentRegulatorGain, p, i);
+            }
+      }
+      }
+} 
+else {
+      ROS_INFO("Controller configuration not requested.");
+}
+
+{
+      ROS_INFO("Configuring Safety");
+      ros::NodeHandle safety_nh(config_nh_, "safety");
+
+      VCS_FROM_SINGLE_PARAM_OPTIONAL(safety_nh, int, max_following_error, SetMaxFollowingError);
+      //VCS_FROM_SINGLE_PARAM_OPTIONAL(safety_nh, int, max_profile_velocity, SetMaxProfileVelocity);
+      VCS_FROM_SINGLE_PARAM_OPTIONAL(safety_nh, int, max_acceleration, SetMaxAcceleration);
+      
+      //if(max_profile_velocity_set)
+      //      max_profile_velocity_ = max_profile_velocity;
+      //else
+      //      max_profile_velocity_ = -1;
+      //}
+      if (!safety_nh.getParam("max_profile_velocity",max_profile_velocity_)) {
+            ROS_WARN("No max profile velocity specified");
+            max_profile_velocity_ = 5000;
+      }
+}
   {
     ROS_INFO("Configuring Position Profile");
     ros::NodeHandle position_profile_nh(config_nh_, "position_profile");
@@ -453,7 +469,7 @@ bool Epos::init() {
       }
     }
   }
-
+  
   {
     ROS_INFO("Configuring Velocity Profile");
     ros::NodeHandle velocity_profile_nh(config_nh_, "velocity_profile");
@@ -529,8 +545,21 @@ bool Epos::init() {
   config_nh_.param<bool>("halt_velocity", halt_velocity_, false);
 
   ROS_INFO_STREAM("Enabling Motor");
-  if(!VCS_SetEnableState(node_handle_->device_handle->ptr, node_handle_->node_id, &error_code))
-    return false;
+  if(!VCS_SetEnableState(node_handle_->device_handle->ptr, node_handle_->node_id, &error_code)) {
+    
+      ROS_INFO("Querying Faults");
+      unsigned char num_errors;
+      if(!VCS_GetNbOfDeviceError(node_handle_->device_handle->ptr, node_handle_->node_id, &num_errors, &error_code))
+      return false;
+      for(int i = 1; i<= num_errors; ++i) {
+      unsigned int error_number;
+      if(!VCS_GetDeviceErrorCode(node_handle_->device_handle->ptr, node_handle_->node_id, i, &error_number, &error_code))
+            return false;
+      ROS_WARN_STREAM("EPOS Device Error: 0x" << std::hex << error_number);
+      }
+
+      return false;
+  }
 
   has_init_ = true;
   return true;
@@ -574,7 +603,6 @@ void Epos::write() {
       if(cmd > max_profile_velocity_)
 	cmd = max_profile_velocity_;
     }
-
     if(cmd == 0 && halt_velocity_) {
       VCS_HaltVelocityMovement(node_handle_->device_handle->ptr, node_handle_->node_id, &error_code);
     }
@@ -592,6 +620,9 @@ void Epos::write() {
       return;
     VCS_SetCurrentMust(node_handle_->device_handle->ptr, node_handle_->node_id, (int)torqueToCurrent(torque_cmd_), &error_code);
   }
+  long t_vel;
+  VCS_GetTargetVelocity(node_handle_->device_handle->ptr, node_handle_->node_id, &t_vel, &error_code);
+  //ROS_INFO_STREAM("Error in move w vel: " << t_vel);
 }
 
 void Epos::update_diagnostics() {
