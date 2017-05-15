@@ -589,40 +589,45 @@ void Epos::read() {
 }
 
 void Epos::write() {
-  if(!has_init_)
-    return;
+      if(!has_init_)
+            return;
 
-  unsigned int error_code;
-  if(operation_mode_ == PROFILE_VELOCITY_MODE) {
-    if(isnan(velocity_cmd_))
-      return;
-    int cmd = (int)velocity_cmd_;
-    if(max_profile_velocity_ >= 0) {
-      if(cmd < -max_profile_velocity_)
-	cmd = -max_profile_velocity_;
-      if(cmd > max_profile_velocity_)
-	cmd = max_profile_velocity_;
-    }
-    if(cmd == 0 && halt_velocity_) {
-      VCS_HaltVelocityMovement(node_handle_->device_handle->ptr, node_handle_->node_id, &error_code);
-    }
-    else {
-      VCS_MoveWithVelocity(node_handle_->device_handle->ptr, node_handle_->node_id, cmd, &error_code);
-    }
-  }
-  else if(operation_mode_ == PROFILE_POSITION_MODE) {
-    if(isnan(position_cmd_))
-      return;
-    VCS_MoveToPosition(node_handle_->device_handle->ptr, node_handle_->node_id, (int)position_cmd_, true, true, &error_code);
-  }
-  else if(operation_mode_ == CURRENT_MODE) {
-    if(isnan(torque_cmd_))
-      return;
-    VCS_SetCurrentMust(node_handle_->device_handle->ptr, node_handle_->node_id, (int)torqueToCurrent(torque_cmd_), &error_code);
-  }
-  long t_vel;
-  VCS_GetTargetVelocity(node_handle_->device_handle->ptr, node_handle_->node_id, &t_vel, &error_code);
-  //ROS_INFO_STREAM("Error in move w vel: " << t_vel);
+      unsigned int error_code;
+      if(operation_mode_ == PROFILE_VELOCITY_MODE) {
+            if(isnan(velocity_cmd_))
+                  return;
+            int cmd = (int)velocity_cmd_;
+            if(max_profile_velocity_ >= 0) {
+                  if(cmd < -max_profile_velocity_)
+                  cmd = -max_profile_velocity_;
+                  if(cmd > max_profile_velocity_)
+                  cmd = max_profile_velocity_;
+            }
+            if(cmd == 0 && velocity_ != 0.0) {
+                  VCS_HaltVelocityMovement(node_handle_->device_handle->ptr, node_handle_->node_id, &error_code);
+            } else if (cmd == 0 && velocity_ == 0.0) {
+                        ROS_INFO("Both setpoint and velocity 0, disabling power stage.");
+                        VCS_SetDisableState(node_handle_->device_handle->ptr, node_handle_->node_id, &error_code);
+            } else {
+                  int disabled = false;
+                  if (VCS_GetDisableState(node_handle_->device_handle->ptr, node_handle_->node_id, &disabled, &error_code) && disabled) {
+                        ROS_INFO("Both setpoint non-zero, enabling power stage.");
+                        VCS_SetEnableState(node_handle_->device_handle->ptr, node_handle_->node_id, &error_code);
+                  } else {
+                        VCS_MoveWithVelocity(node_handle_->device_handle->ptr, node_handle_->node_id, cmd, &error_code);
+                  }
+            }
+      }
+      else if(operation_mode_ == PROFILE_POSITION_MODE) {
+            if(isnan(position_cmd_))
+                  return;
+            VCS_MoveToPosition(node_handle_->device_handle->ptr, node_handle_->node_id, (int)position_cmd_, true, true, &error_code);
+      }
+      else if(operation_mode_ == CURRENT_MODE) {
+            if(isnan(torque_cmd_))
+                  return;
+            VCS_SetCurrentMust(node_handle_->device_handle->ptr, node_handle_->node_id, (int)torqueToCurrent(torque_cmd_), &error_code);
+      }
 }
 
 void Epos::update_diagnostics() {
